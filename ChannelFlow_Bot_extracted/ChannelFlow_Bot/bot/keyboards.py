@@ -24,14 +24,13 @@ from telegram import (
 import json
 
 # ==========================================
-# MAIN MENU (reply keyboard) - minimal
-# Prompt 4 final requirement: exactly 4 primary actions
+# MAIN MENU (reply keyboard) - PRD final navigation
 # ==========================================
 
 main_menu = ReplyKeyboardMarkup(
     [
-        ["➕ New Project", "🏠 Home"],
-        ["📁 My Projects", "⚙️ Settings"],
+        ["📁 Projects", "💳 Subscription"],
+        ["🎁 Rewards", "👤 Account"],
     ],
     resize_keyboard=True,
     is_persistent=True,

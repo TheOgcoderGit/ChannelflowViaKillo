@@ -205,6 +205,12 @@ def _migrate_existing_schema(cur):
             "ALTER TABLE projects ADD COLUMN promo_enabled INTEGER NOT NULL DEFAULT 1"
         )
 
+    # Project state for guided creation flow (DRAFT, READY, ACTIVE, PAUSED, DEGRADED, ERROR, STOPPED, DELETED)
+    if not _column_exists(cur, "projects", "project_state"):
+        cur.execute(
+            "ALTER TABLE projects ADD COLUMN project_state TEXT NOT NULL DEFAULT 'DRAFT'"
+        )
+
     # The Telegram channel that the external affiliate-converter bot
     # posts *into*. Nullable - only set on instagram_broadcast/both
     # projects. Deliberately not reusing `sources`/`destinations` for
@@ -400,6 +406,9 @@ def init_db():
         user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         status INTEGER NOT NULL DEFAULT 0,
+        platform_type TEXT NOT NULL DEFAULT 'telegram',
+        promo_enabled INTEGER NOT NULL DEFAULT 1,
+        project_state TEXT NOT NULL DEFAULT 'DRAFT',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
     )

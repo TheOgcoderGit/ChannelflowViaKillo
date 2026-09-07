@@ -13,11 +13,12 @@ def create_project(user_id, name, platform_type="telegram"):
             name,
             status,
             platform_type,
-            promo_enabled
+            promo_enabled,
+            project_state
         )
         VALUES
         (
-            ?, ?, 0, ?, 1
+            ?, ?, 0, ?, 1, 'DRAFT'
         )
     """, (user_id, name, platform_type))
 
@@ -142,6 +143,35 @@ def set_platform_type(project_id, platform_type):
 
     conn.commit()
     conn.close()
+
+
+def set_project_state(project_id, state):
+    """Update project state (DRAFT, READY, ACTIVE, PAUSED, DEGRADED, ERROR, STOPPED, DELETED)"""
+    valid_states = ("DRAFT", "READY", "ACTIVE", "PAUSED", "DEGRADED", "ERROR", "STOPPED", "DELETED")
+    if state not in valid_states:
+        raise ValueError(f"Invalid project state: {state}. Must be one of {valid_states}")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "UPDATE projects SET project_state=? WHERE id=?",
+        (state, project_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_project_state(project_id):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT project_state FROM projects WHERE id=?", (project_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    return row["project_state"] if row else None
 
 
 def set_processing_channel(project_id, chat_id, username, title):

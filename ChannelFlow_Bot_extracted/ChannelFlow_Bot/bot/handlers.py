@@ -197,9 +197,9 @@ logger = logging.getLogger(__name__)
 
 BTN_NEW_PROJECT = "➕ New Project"
 BTN_MY_PROJECTS = "📁 My Projects"
-BTN_STATUS = "📊 Status"
-BTN_SETTINGS = "⚙ Settings"
-BTN_MY_PLAN = "📦 My Plan"
+BTN_SUBSCRIPTION = "💳 Subscription"
+BTN_REWARDS = "🎁 Rewards"
+BTN_ACCOUNT = "👤 Account"
 BTN_CONNECT_NOW = "🚀 Connect Now"
 BTN_GUIDE = "📖 Guide"
 BTN_TOUR = "🧭 Tour"
@@ -680,6 +680,7 @@ async def _handle_connect_phone(message, user_id, phone_text):
 
     await message.reply_text(
         "🔑 Enter the login code Telegram just sent you.\n\n"
+        "Use format: FLOW12345 or FLOW 12345\n\n"
         "Never share this code with anyone, including anyone claiming "
         "to be ChannelFlow support."
     )
@@ -693,8 +694,17 @@ async def _handle_connect_code_or_password(message, user_id, text):
 
         if stage == "code":
 
+            # Try the new FLOW format first, then fall back to legacy /myflow
+            ok, code_or_error = user_sessions.extract_otp_from_flow_command(text.strip())
+
+            if not ok:
+                await message.reply_text(code_or_error)
+                return
+
+            code = code_or_error
+
             try:
-                await user_sessions.submit_code(user_id, text.strip())
+                await user_sessions.submit_code(user_id, code)
 
             except user_sessions.NeedsPassword:
                 WAITING_CONNECT_STAGE[user_id] = "password"
@@ -769,7 +779,10 @@ async def _send_guide(message):
         "test message to your destinations before going live.\n\n"
         "6. 📊 Stats and 📜 Logs on each project show what's happened "
         "so far.\n\n"
-        "📦 My Plan shows your current limits and how much you're using."
+        "📦 My Plan shows your current limits and how much you're using.\n\n"
+        "🔐 To connect: send your phone number after tapping Connect, "
+        "then reply with FLOW<code> (e.g., FLOW12345) when Telegram "
+        "sends you the login code."
     )
 
 
@@ -789,6 +802,8 @@ async def _send_tour(message):
         "• Fixed or random delay between detection and forwarding\n"
         "• Automatic retry with backoff on Telegram rate limits\n"
         "• Per-project stats, activity logs, and a one-tap test send\n\n"
+        "🔐 To connect: send /connect +919876543210, then reply with "
+        "FLOW<code> (e.g., FLOW12345) when Telegram sends the code.\n\n"
         "Tap 🚀 Connect Now when you're ready to set it up."
     )
 
@@ -1111,6 +1126,22 @@ async def menu_handler(
         return
 
     # ======================================
+    # OTP ISOLATION (PRD section 5.3)
+    # A numeric message such as "94563" must not automatically be
+    # treated as a login code. Only an active login attempt belonging
+    # to the same ChannelFlow user may consume FLOW.
+    # If no login attempt exists, show clear error.
+    # ======================================
+
+    if text.strip().isdigit() and not text.strip().startswith(("FLOW", "/flow", "/myflow")):
+        if user.id not in WAITING_CONNECT_STAGE:
+            await message.reply_text(
+                "No active Telegram login attempt.\n"
+                "Please use /connect first."
+            )
+            return
+
+    # ======================================
     # LOGIN GATE
     # Everything below this point is project/settings functionality -
     # not reachable until the user has connected their own Telegram
@@ -1172,15 +1203,6 @@ async def menu_handler(
 
         if text == BTN_ACCOUNT:
             await _send_account_card(message, user)
-            return
-
-        if text == BTN_SETTINGS:
-
-            await message.reply_text(
-                "⚙ ChannelFlow Settings",
-                reply_markup=settings_keyboard(wallet_service.is_auto_renew_enabled(user.id))
-            )
-
             return
 
     # ======================================
@@ -1467,14 +1489,25 @@ async def _handle_platform_selected(message, user_id, platform_type):
     project = get_project(project_id)
     platform_meta = get_platform(platform_type) or {}
 
-    await message.reply_text(
+    # Update project state to DRAFT (initial state after creation)
+    from services.project_service import set_project_state
+    set_project_state(project_id, "DRAFT")
 
+    # Guide user to add a source next
+    await message.reply_text(
         "✅ Project Created\n\n"
         f"📂 {project['name']}\n"
-        f"{platform_meta.get('icon', '')} {_platform_label(project['platform_type'])}",
-
+        f"{platform_meta.get('icon', '')} {_platform_label(project['platform_type'])}\n\n"
+        "📝 Next step: Add a source channel to watch.",
         reply_markup=project_keyboard(project_id, platform_type=project["platform_type"])
+    )
 
+    # Auto-prompt for source
+    WAITING_SOURCE[user_id] = True
+    await message.reply_text(
+        "📥 Send Source Username\n\n"
+        "Example:\n"
+        "@YourChannel"
     )
 
 
@@ -1582,10 +1615,17 @@ async def _handle_add_source(message, user_id, text):
 
         await force_refresh_routes()
 
+        # Update project state if it was DRAFT
+        from services.project_service import get_project_state, set_project_state
+        current_state = get_project_state(project_id)
+        if current_state == "DRAFT":
+            set_project_state(project_id, "READY")
+
         text = (
             "✅ Source Added\n\n"
             f"📂 {chat['title'] or chat['username'] or chat['chat_id']}\n"
-            f"🏷 {chat['type']}"
+            f"🏷 {chat['type']}\n\n"
+            "📝 Next step: Add a destination to forward to."
         )
 
         if not chat.get("joined", True):
@@ -1594,6 +1634,14 @@ async def _handle_add_source(message, user_id, text):
         await message.reply_text(
             text,
             reply_markup=project_keyboard(project_id, platform_type=project["platform_type"])
+        )
+
+        # Auto-prompt for destination
+        WAITING_DESTINATION[user_id] = True
+        await message.reply_text(
+            "📤 Send Destination Username\n\n"
+            "Example:\n"
+            "@YourChannel"
         )
 
     else:
@@ -1660,10 +1708,18 @@ async def _handle_add_destination(message, user_id, text):
 
         await force_refresh_routes()
 
+        # Update project state if it was READY (has source)
+        from services.project_service import get_project_state, set_project_state
+        current_state = get_project_state(project_id)
+        if current_state == "READY":
+            set_project_state(project_id, "READY")
+
         text = (
             "✅ Destination Added\n\n"
             f"📂 {chat['title'] or chat['username'] or chat['chat_id']}\n"
-            f"🏷 {chat['type']}"
+            f"🏷 {chat['type']}\n\n"
+            "🔧 Optional: Configure transformations (Filters, Formatting, AI, Watermark, Affiliate)\n"
+            "Then use 🧪 Test to verify, and ▶ Start to activate."
         )
 
         if not chat.get("joined", True):
