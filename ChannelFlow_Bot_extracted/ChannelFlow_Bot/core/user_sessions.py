@@ -288,7 +288,7 @@ async def submit_code(user_id: int, code: str):
         raise ConnectError("No login in progress. Send /connect <phone_number> to start.")
 
     # Check for timeout before processing
-    if _time.monotonic() - state["started_at"] > PENDING_TTL_SECONDS:
+    if time.monotonic() - state["started_at"] > PENDING_TTL_SECONDS:
         await _drop_pending(user_id)
         raise ConnectError("Login session expired. Send /connect <phone_number> to start over.")
 
@@ -330,7 +330,7 @@ async def submit_code(user_id: int, code: str):
 
         raise ConnectError(
             "That code was incorrect or expired. "
-            f"Try the newest code: {OTP_COMMAND_PREFIX}<code>"
+            f"Try the newest code: /flow<code>"
         )
 
     except Exception:

@@ -606,7 +606,10 @@ async def connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         WAITING_CONNECT_PHONE[user.id] = True
         await update.message.reply_text(
-            "📱 Send your phone number with country code, e.g. +919876543210."
+            "📱 Send your phone number with country code, e.g. +919876543210.\n\n"
+            "Telegram will send you a login code. Never share that code with "
+            "anyone else, including someone claiming to be ChannelFlow support "
+            "- we will never ask you to send it to us in any other way."
         )
         return
 
